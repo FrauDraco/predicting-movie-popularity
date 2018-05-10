@@ -1,0 +1,199 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(knitr)
+library(RColorBrewer)
+library(kableExtra)
+library(GGally)
+```
+
+### Load data
+
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+_IMDb_ and _Rotten Tomatoes_ are two of the most popular rating websites for movies. Both of these websites provide two sets of ratings: critics scores and audience scores, as well as numerous other variables about the movies. Our dataset is comprised of _651 randomly sampled movies_ produced and released before 2016. Each row in the dataset corresponds to a movie, and every column of the table represents a particular characteristic of a movie. There are 32 available variables.
+
+**Generalizability:** Conclusions made from this data set are _generalizable_ because movies were _randomly selected_. The results are generalizable to movies produced and released before 2016.
+
+**Causality:** This is an _observational study_ with _no random assignment_, therefore we _cannot infer causality_.
+
+**Potential biases:** Most rating systems suffer from _self-selection bias_ since only highly motivated individuals commit to voting and ranking the movies. In addition, one person can post multiple comments and affect the ranking.
+
+* * *
+
+## Part 2: Research question
+
+##### Is popularity of feature film on Rotten Tomatoes website, measured by the audience score, related to the genre, critics' rating and Oscar awards won by one of the main actors or actresses?
+
+**Rationale:** Developing this model can provide valuable insights into the characteristics that are considered influential in establishing the popularity of a feature film.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+Dataframe "movies" consists of 651 observations of 32 variables. 
+
+The analysis will be based on the following variables:
+
+* **Audience score on Rotten Tomatoes** </br> 
+Numerical variable "audience_score" (values between 1 and 100, with higher points corresponding to a more favorable rating)
+
+* **Genre of movie** </br> 
+Categorical variable "genre" with 11 levels (Action & Adventure, Animation, Art House & International, Comedy, Documentary, Drama, Horror, Musical & Performing Arts, Mystery & Suspense, Science Fiction & Fantasy, Other)
+
+* **Critics score on Rotten Tomatoes** </br> 
+Numerical variable "critics_score" (values between 1 and 100, with higher points corresponding to a more favorable rating)
+
+* **Oscar won by one of the main actors** </br>
+Categorical variable "best_actor_win" with 2 levels (no, yes)
+
+* **Oscar won by one of the main actresses** </br>
+Categorical variable "best_actress_win" with 2 levels (no, yes)
+
+```{r}
+movies %>% 
+  select(audience_score, genre, critics_score, best_actor_win, best_actress_win) %>% 
+  str()
+```
+
+Since we are interested particularly in feature films, new dataset "movies_ftr" will be created. New dataset consists of 591 feature films and 5 previously selected variables.
+
+```{r}
+movies_ftr <- movies %>% select(audience_score, genre, critics_score, best_actor_win, best_actress_win) %>% filter(movies$title_type == "Feature Film")
+
+dim(movies_ftr)
+
+kable(summary(movies_ftr), col.names = c("Audience Score","Genre","Critics Score","Actor Awarded", "Actress Awarded"), align = 'c', digits = 5)
+```
+
+We can see that average audience score is 60.47 and the average critics score is 54.78. Scatterplot will be used to display the relationship between audience score and critics score on Rotten Tomatoes website. Color of the points indicates levels of the categorical variable "genre".
+
+```{r}
+ggplot(data = movies_ftr, aes(critics_score, audience_score)) + 
+    geom_point(aes(color = movies_ftr$genre)) + scale_colour_brewer("Movie genre", palette = "PRGn") +
+    xlab('Critics score') +
+    ylab('Audience score') +
+    geom_smooth(method="lm", se=FALSE, colour="darkgreen")
+```
+
+The direction of the relationship between audience score and critics score appears to be positive and the form of the relationship is linear. There is no visible difference in score distribution among genres. </br> 
+
+```{r}
+movies_ftr %>%
+  summarise(cor(audience_score, critics_score))
+```
+
+Since we perceived the relationship as linear, strength of the relationship was quantified with the correlation coefficient. Correlation coefficient of 0.67 indicates a moderate positive relationship between audience score and critics score, meaning that for every positive increase of 1 unit in one variable, there is a positive increase of 1 unit in the other. </br> 
+
+Next step is assessing potential association between audience score and whether or not one of the main actors/actresses in the movie ever won an Oscar. We will calculate summary statistic and use the scatterplot with winning the Oscar as explanatory variable and audience score as response variable.
+
+```{r}
+ggplot(movies_ftr, aes(x = best_actor_win, y = audience_score)) + geom_boxplot() + xlab('Oscar won by one of the main actors') + ylab('Audience score')
+```
+
+```{r}
+ggplot(movies_ftr, aes(x = best_actress_win, y = audience_score)) + geom_boxplot() + xlab('Oscar won by one of the main actresses') + ylab('Audience score')
+```
+
+```{r}
+kable(movies_ftr %>%
+  group_by(best_actor_win) %>%
+  summarise(mean_m = mean(audience_score), median_m = median(audience_score), sd_m = sd(audience_score), n = n()), col.names = c("Oscar won by one of the main actors","Mean","Median","Standard deviation", "Total"), align = 'c', digits = 4)
+
+kable(movies_ftr %>%
+  group_by(best_actress_win) %>%
+  summarise(mean_f = mean(audience_score), median_f = median(audience_score), sd_f = sd(audience_score), n = n()), col.names = c("Oscar won by one of the main actresses","Mean","Median","Standard deviation", "Total"),align = 'c', digits = 4)
+```
+
+Based on the visual representation and summary statistic, we can conclude that movies with actors/actresses who had won the Oscar received on average better score than the movies with actors/actresses who had not won the Oscar. Distribution of the audience score for the movies with actresses who had won the Oscar is left skewed, indicating that audience is more likely to rate those movies highly.
+
+* * *
+
+## Part 4: Modeling
+
+For this study I will be assessing whether one continuous dependent variable (audience score) can be predicted from a set of independent (or predictor) variables. Selection procedure called backwards elimination is used to yield the most appropriate regression equation. Backwards elimination has an advantage over other methods because it is possible for a set of variables to have considerable predictive capability even though any subset of them does not. Backwards elimination starts with everything in the model, so their joint predictive capability will be seen. </br> 
+
+All the independent variables will be entered into the equation first and than each is going to be deleted one at a time if they do not contribute to the regression equation.
+
+```{r}
+model_full <- lm(audience_score ~ genre + critics_score + best_actor_win + best_actress_win, data = movies_ftr)
+summary(model_full)
+```
+
+The variable that is least significant (the one with the largest P value) will be removed and the model will be refitted. Each subsequent step removes the least significant variable until a parsimonious model is reached.
+
+```{r}
+fit1 <- lm(audience_score ~ genre + critics_score + best_actor_win, data = movies_ftr)
+summary(fit1)
+
+fit2 <- lm(audience_score ~ genre + critics_score, data = movies_ftr)
+summary(fit2)
+```
+
+The final model has two predictors: genre and critics score. Action&adventure films are reference category. Adjusted R-squared increased slightly after we removed variables "best_actor_win" and "best_actress_win" with largest P-values. Although some levels of the "genre" variable had high P-value, we could not remove them because some other levels had significant P-values. </br> 
+
+The model predicts that on average audience scores Animation films 4.6 points higher than Action & Adventure films, all else held constant. Art House & International films are on average scored 5.51 points higher than Action & Adventure films, all else held constant. Other levels of variable "genre" had the same interpretation. </br> 
+
+The estimate for "critics_score" reflects that, all else held constant, for each point increase in critics score, the model predicts audience score to be higher on average by 0.46 points. </br> 
+
+R-Squared(0.4877): 48.77% of the variability in audience score can be explained by the model.
+
+All conditions for linear regression with multiple predictors are checked. 
+
+```{r}
+plot(fit2$residuals ~ movies_ftr$critics_score)
+hist(fit2$residuals)
+qqnorm(fit2$residuals)
+qqline(fit2$residuals)
+plot(fit2$residuals ~ fit2$fitted.values)
+```
+
+The residuals plot shows a random scatter proving linear association, there is no fan shape in residuals plot (constant variance of residuals), residuals are normally distributed and independent. Using diagnostic plots, we can conclude that the conditions for this model are reasonable.
+
+* * *
+
+## Part 5: Prediction
+
+We are going to use the model developed earlier to predict the audience score for the new movie from 2016 that is not included in the sample. Movie ["Moonlight"](https://www.rottentomatoes.com/m/moonlight_2016), categorized as drama, on the Rotten Tomatoes website has a 98% rating (critics score). New data frame will be created for this movie.
+
+```{r}
+moonlight <- data.frame(genre = "Drama", critics_score = 98)
+predict(fit2, moonlight)
+```
+
+Our model predicts movie "Moonlight" will have an audience score approximately 81%. The actual audience score for this movie is 79. We can also construct a prediction interval around this prediction, which will provide a measure of uncertainty around the prediction.
+
+```{r}
+predict(fit2, moonlight, interval = "prediction", level = 0.95)
+```
+
+The model predicts, with 95% confidence, that drama "Moonlight" with an average critics score of 98 is expected to have an audience score between 53.65 and 110.09. Our prediction interval contains actual audience score from the Rotten Tomatoes website.
+
+* * *
+
+## Part 6: Conclusion
+
+Although R-squared value is not high, our model manages to predict a movie's popularity, as measured by audience score, using only two predictors - genre and critics score. Higher predictive power can be obtained by including more predictors, for example IMDb score. Also, larger number of observations would assure better predictive value.
